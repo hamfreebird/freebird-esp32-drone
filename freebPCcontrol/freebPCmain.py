@@ -20,7 +20,7 @@ buffer = pygame.Surface(display_size)
 clock = pygame.time.Clock()
 
 try:
-    setting_list = ["" for _ in range(0, 2)]
+    setting_list = ["" for _ in range(0, 3)]
     setting_index = 0
     use_setting_film = True
     setting = open("setting.txt", "r")
@@ -29,7 +29,9 @@ try:
         setting_index += 1
     esp32_ip = str(setting_list[0][12:len(setting_list[0]) - 2])
     print(esp32_ip)
-    esp32_port = str(setting_list[1][14:len(setting_list[1]) - 2])
+    pc_ip = str(setting_list[1][9:len(setting_list[1]) - 2])
+    print(pc_ip)
+    esp32_port = str(setting_list[2][14:len(setting_list[2]) - 2])
     print(esp32_port)
     setting.close()
 except:
@@ -51,7 +53,7 @@ motors_pwm_space = "               "
 sensor_title_space = "        "
 event_text = freetext.SuperText(screen, [3, 5], "", "assets\\simhei.ttf", size = 12,
                                 color=pygame.colordict.THECOLORS.get("grey70"))
-esp32_text = freetext.SuperText(screen, [1030, 5], ("esp32_ip: " + str(esp32_ip) + "   esp32_port: " + str(esp32_port)),
+esp32_text = freetext.SuperText(screen, [1000, 5], ("esp32_ip: " + str(esp32_ip) + "   esp32_port: " + str(esp32_port)),
                                 "assets\\simhei.ttf", size = 12, color=pygame.colordict.THECOLORS.get("grey70"))
 
 # 右边需要显示的字符
@@ -139,7 +141,7 @@ while True:
             pass
 
     if receive_udp_each_time == receive_udp_each_time_max:
-        data, addr = dp.receive_udp_message(esp32_ip, esp32_port)
+        data, addr = dp.receive_udp_message(esp32_ip, int(esp32_port))
         message = dp.coding_message(23, 1, w, a, s, d, q, e, r, f, space)
         # w, a, s, d, q, e, r, f, space = 0, 0, 0, 0, 0, 0, 0, 0, 0
         print(message)
@@ -154,7 +156,7 @@ while True:
             check, state, motor_1, motor_2, motor_3, motor_4, sensor = dp.decoding_message(data)
         receive_udp_each_time = 0
         receive_udp_time += 1
-        dp.send_udp_message(message, esp32_ip, esp32_port)
+        dp.send_udp_message(message, esp32_ip, int(esp32_port))
     else:
         receive_udp_each_time += 1
 

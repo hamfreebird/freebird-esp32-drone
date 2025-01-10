@@ -28,7 +28,7 @@ def send_udp_message(message, ip, port):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     try:
-        sock.sendto(message.encode(), (ip, port))
+        sock.sendto(message.encode("utf-8"), (ip, port))
     except Exception as e:
         print(f"Error sending message: {e}")
     finally:
