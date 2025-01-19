@@ -1,4 +1,5 @@
 """data processing"""
+# TODO：不知道为啥，运行不了多久内存就爆了
 
 import socket
 
@@ -24,9 +25,7 @@ def decoding_message(_message):
     return _check, _state, _motor_1, _motor_2, _motor_3, _motor_4, _sensor
 
 def send_udp_message(message, ip, port):
-    # Create a UDP socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
     try:
         sock.sendto(message.encode("utf-8"), (ip, port))
     except Exception as e:
@@ -35,19 +34,15 @@ def send_udp_message(message, ip, port):
         sock.close()
 
 def receive_udp_message(ip, port, buffer_size=128):
-    # Create a UDP socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
     try:
-        # Bind the socket to the port
         sock.bind((ip, port))
         data, addr = sock.recvfrom(buffer_size)
         message = data.decode()
     except Exception as e:
         print(f"Error receiving message: {e}")
-        message, addr = "", ""
+        message, addr = f"Error receiving message: {e}", ""
     finally:
         sock.close()
-
     return message, addr
 

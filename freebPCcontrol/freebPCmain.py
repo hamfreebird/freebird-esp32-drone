@@ -6,6 +6,7 @@ import pygame.draw
 import pygame.colordict
 import dialog_box
 from freepygame import freetext
+# TODO: freepygame的效率太低了，要改
 import data_processing as dp
 import time
 
@@ -13,7 +14,7 @@ pygame.init()
 frame_number = 240
 display_size = (1280, 720)
 pygame.display.set_caption("freebird PC flight controller")
-pygame.display.set_icon(pygame.image.load("assets\\freebird_music.ico"))
+pygame.display.set_icon(pygame.image.load("assets\\freebPCcontrol.ico"))
 screen = pygame.display.set_mode(display_size, pygame.DOUBLEBUF | pygame.HWSURFACE)
 screen.fill(pygame.colordict.THECOLORS.get("grey0"))
 buffer = pygame.Surface(display_size)
@@ -40,7 +41,7 @@ except:
 
 receive_udp_time = 0
 receive_udp_each_time = 0
-receive_udp_each_time_max = 5
+receive_udp_each_time_max = 1
 receive_udp_data = []
 send_udp_data = []
 w, a, s, d, q, e, r, f, space = 0, 0, 0, 0, 0, 0, 0, 0, 0
@@ -140,13 +141,14 @@ while True:
         else:
             pass
 
+    # TODO: 无法接收对面的信号，报错10049
     if receive_udp_each_time == receive_udp_each_time_max:
         data, addr = dp.receive_udp_message(esp32_ip, int(esp32_port))
         message = dp.coding_message(23, 1, w, a, s, d, q, e, r, f, space)
         # w, a, s, d, q, e, r, f, space = 0, 0, 0, 0, 0, 0, 0, 0, 0
         print(message)
-        if data == "":
-            receive_udp_data.append(str(receive_udp_time) + "  Error receiving message")
+        if len(data) != 64:
+            receive_udp_data.append(str(receive_udp_time) + "  " + data)
             send_udp_data.append(str(receive_udp_time) + "  " + str(message))
             if len(receive_udp_data) > 22:
                 receive_udp_data.pop(0)
