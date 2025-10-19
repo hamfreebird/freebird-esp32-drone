@@ -19,6 +19,24 @@ float angles[3]; // yaw pitch roll
 // Set the FreeSixIMU object
 FreeSixIMU sixDOF = FreeSixIMU();
 
+// 定义引脚和PWM参数
+#define ESC_PIN_1 11
+#define ESC_PIN_2 12
+#define ESC_PIN_3 13
+#define ESC_PIN_4 14
+#define PWM_FREQ 50
+#define PWM_RESOLUTION 16
+
+// PWM脉宽范围（单位：微秒）
+#define MIN_PULSE_WIDTH 1000
+#define MAX_PULSE_WIDTH 2000
+
+// PWM通道
+#define PWM_CHANNEL_1 0
+#define PWM_CHANNEL_2 1
+#define PWM_CHANNEL_3 2
+#define PWM_CHANNEL_4 3
+
 // 上一次的角度值和时间戳
 float last_angles[3] = {0, 0, 0};  // 存储上一次的roll, pitch, yaw角度值
 uint32_t last_angle_time = 0;       // 存储上一次角度读取的时间戳
@@ -27,6 +45,7 @@ uint32_t last_angle_time = 0;       // 存储上一次角度读取的时间戳
 typedef struct {
     float accel[3];      // 加速度计数据 (m/s^2) [x, y, z]
     float gyro[3];       // 陀螺仪数据 (rad/s) [x, y, z]
+    float degrees[3];    // 磁罗盘数据
     float baro;          // 气压计数据 (Pa)
     float temp;          // 温度计数据 (°C)
     float alti;          // 高度数据 (m)
@@ -106,6 +125,7 @@ sensor_data_t sensor_data;
 drone_state_t drone_state;
 control_output_t control_output;
 drone_config_t drone_config;
+int currentSpeed = 0; // 当前速度值
 
 // PID控制器实例
 pid_controller_t roll_pid = {3.0, 0.8, 0.2, 0, 0, 0, 0, 45.0, 25.0, 0.05};
@@ -305,9 +325,6 @@ void loop() {
     // 控制混合器
     euler_angles_t pid_output = {roll_output, pitch_output, yaw_output};
     controlMixer(&pid_output, combined_alt_output, vel_z_error, &control_output);
-
-    Serial.println("roll_pid");
-    Serial.println(roll_output);
     
     // 安全检查
     if (!checkSafety(&sensor_data, &drone_state, &control_output)) {
@@ -321,26 +338,27 @@ void loop() {
     // 输出PWM信号
     outputPWM(&control_output);
 
-    // 打印数据
-    printStateAndPwmData(&drone_state, &control_output, &sensor_data);
+    // 控制周期计数
+    controlCycleCount++;
 
-    // 发送数据
-    if (udpStartSend == true) {
-      // 控制周期计数
-      controlCycleCount++;
+    // 每10个控制周期发送一次UDP数据,打印一次数据
+    if (controlCycleCount % udpSendInterval == 0) {
 
-      // 每10个控制周期发送一次UDP数据
-      if (controlCycleCount % udpSendInterval == 0) {
-          udp_data_packet_t udp_packet;
+      // 打印数据
+      printStateAndPwmData(&drone_state, &control_output, &sensor_data);
+      Serial.print("周期: "); Serial.println(controlCycleCount); 
 
-          // 准备UDP数据包
-          pid_controller_t pids[] = {roll_pid, pitch_pid, yaw_pid, alt_pid, vel_z_pid};
-          prepareUDPPacket(&udp_packet, &drone_state, &control_output, pids);
+      if (udpStartSend == true) {
+        udp_data_packet_t udp_packet;
 
-          // 发送UDP数据包
-          if (!sendUDPData(&udp_packet)) {
-              Serial.println("UDP发送失败");
-         }
+        // 准备UDP数据包
+        pid_controller_t pids[] = {roll_pid, pitch_pid, yaw_pid, alt_pid, vel_z_pid};
+        prepareUDPPacket(&udp_packet, &drone_state, &control_output, pids);
+    
+        // 发送UDP数据包
+        if (!sendUDPData(&udp_packet)) {
+            Serial.println("UDP发送失败");
+        }
       }
     }
 }
@@ -748,7 +766,7 @@ void initSensors() {
     Wire.begin();
   
     delay(5);
-    //sixDOF.init(); //begin the IMU
+    sixDOF.init(); //begin the IMU
     delay(5);
 }
 
@@ -760,13 +778,6 @@ bool readSensors(sensor_data_t *data) {
     uint32_t    press = bmp.getPressure();
     float   alti = bmp.calAltitude(SEA_LEVEL_PRESSURE, press);
 
-    //Serial.println();
-    //Serial.println("======== start print ========");
-    //Serial.print("temperature (unit Celsius): "); Serial.println(temp);
-    //Serial.print("pressure (unit pa):         "); Serial.println(press);
-    //Serial.print("altitude (unit meter):      "); Serial.println(alti);
-    //Serial.println("========  end print  ========");
-
     data->alti = alti;
     data->baro = press;
     data->temp = temp;
@@ -775,36 +786,66 @@ bool readSensors(sensor_data_t *data) {
     compass.setDeclinationAngle(declinationAngle);
     sVector_t mag = compass.readRaw();
     compass.getHeadingDegrees();
-    //Serial.print("X:");
-    //Serial.print(mag.XAxis);
-    //Serial.print(" Y:");
-    //Serial.print(mag.YAxis);
-    //Serial.print(" Z:");
-    //Serial.println(mag.ZAxis);
-    //Serial.print("Degress = ");
-    //Serial.println(mag.HeadingDegress);
-
-    //sixDOF.getEuler(angles);
-    //Serial.print(angles[0]);
-    //Serial.print(" | ");  
-    //Serial.print(angles[1]);
-    //Serial.print(" | ");
-    //Serial.println(angles[2]);
 
     float mag_angles[3];
     mag_angles[0] = mag.XAxis;
     mag_angles[1] = mag.YAxis;
     mag_angles[2] = mag.ZAxis;
 
-    calculateAngularVelocity(data, mag_angles, current_time);
+    // calculateAngularVelocity(data, mag_angles, current_time);
+
+    data->degrees[0] = mag_angles[0];
+    data->degrees[1] = mag_angles[1];
+    data->degrees[2] = mag_angles[2];
+    
+    sixDOF.getEuler(angles);
+
+    data->gyro[0] = angles[0];
+    data->gyro[1] = angles[1];
+    data->gyro[2] = angles[2];
 
     data->valid = true;
     return true;
 }
 
-void outputPWM(const control_output_t *output) {
-    // 将PWM值输出到电调
-    // 将百分比转换为实际的PWM脉冲宽度
+// 初始化电调PWM设置
+void setupESC() {
+  ledcSetup(PWM_CHANNEL_1, PWM_FREQ, PWM_RESOLUTION);
+  ledcSetup(PWM_CHANNEL_2, PWM_FREQ, PWM_RESOLUTION);
+  ledcSetup(PWM_CHANNEL_3, PWM_FREQ, PWM_RESOLUTION);
+  ledcSetup(PWM_CHANNEL_4, PWM_FREQ, PWM_RESOLUTION);
+  ledcAttachPin(ESC_PIN_1, PWM_CHANNEL_1);
+  ledcAttachPin(ESC_PIN_2, PWM_CHANNEL_2);
+  ledcAttachPin(ESC_PIN_3, PWM_CHANNEL_3);
+  ledcAttachPin(ESC_PIN_4, PWM_CHANNEL_4);
+}
+
+void outputPWM(int value, const control_output_t *output) {
+  // 限制输入范围
+  float value_1 = constrain(output->motor1, 0, 100);
+  float value_2 = constrain(output->motor2, 0, 100);
+  float value_3 = constrain(output->motor3, 0, 100);
+  float value_4 = constrain(output->motor4, 0, 100);
+  
+  // 将0-100转换为脉宽微秒数
+  int pulseWidth_1 = map(value_1, 0, 100, MIN_PULSE_WIDTH, MAX_PULSE_WIDTH);
+  int pulseWidth_2 = map(value_2, 0, 100, MIN_PULSE_WIDTH, MAX_PULSE_WIDTH);
+  int pulseWidth_3 = map(value_3, 0, 100, MIN_PULSE_WIDTH, MAX_PULSE_WIDTH);
+  int pulseWidth_4 = map(value_4, 0, 100, MIN_PULSE_WIDTH, MAX_PULSE_WIDTH);
+  
+  // 将脉宽转换为占空比
+  // 占空比 = (脉冲宽度 / 周期) * 最大计数值
+  // 周期 = 1 / 频率 = 1 / 50Hz = 20ms = 20000μs
+  uint32_t duty_1 = (pulseWidth_1 * (1 << PWM_RESOLUTION)) / 20000;
+  uint32_t duty_2 = (pulseWidth_2 * (1 << PWM_RESOLUTION)) / 20000;
+  uint32_t duty_3 = (pulseWidth_3 * (1 << PWM_RESOLUTION)) / 20000;
+  uint32_t duty_4 = (pulseWidth_4 * (1 << PWM_RESOLUTION)) / 20000;
+  
+  // 设置PWM
+  ledcWrite(PWM_CHANNEL_1, duty_1);
+  ledcWrite(PWM_CHANNEL_2, duty_2);
+  ledcWrite(PWM_CHANNEL_3, duty_3);
+  ledcWrite(PWM_CHANNEL_4, duty_4);
 }
 
 // 打印无人机状态和电机的pwm值
@@ -828,14 +869,14 @@ void printStateAndPwmData(drone_state_t *state, control_output_t *output, sensor
     Serial.println(data->gyro[2]);
     Serial.println("----------------------- state --------------------------");
     Serial.print("quaternion wxyz:  ");
-    Serial.print(state->attitude->w);   Serial.print(" ");
-    Serial.print(state->attitude->x);   Serial.print(" ");
-    Serial.print(state->attitude->y);   Serial.print(" ");
-    Serial.println(state->attitude->z);
+    Serial.print(state->attitude.w);    Serial.print(" ");
+    Serial.print(state->attitude.x);    Serial.print(" ");
+    Serial.print(state->attitude.y);    Serial.print(" ");
+    Serial.println(state->attitude.z);
     Serial.print("euler_angles rpy: ");
-    Serial.print(state->euler->roll);   Serial.print(" ");
-    Serial.print(state->euler->pitch);  Serial.print(" ");
-    Serial.println(state->euler->yaw);
+    Serial.print(state->euler.roll);    Serial.print(" ");
+    Serial.print(state->euler.pitch);   Serial.print(" ");
+    Serial.println(state->euler.yaw);
     Serial.print("altitude:         ");
     Serial.println(state->altitude);
     Serial.print("velocity[3] xyz:  ");
@@ -856,7 +897,6 @@ void printStateAndPwmData(drone_state_t *state, control_output_t *output, sensor
     Serial.println(output->motor4);
     Serial.print("armed:            ");
     Serial.println(output->armed);
-    Serial.println("------------------------ off ---------------------------");
 }
 
 // show last sensor operate status
