@@ -17,25 +17,25 @@ BMP   bmp(&Wire, BMP::eSdoHigh);
 DFRobot_QMC5883 compass(&Wire, /*I2C addr*/VCM5883L_ADDRESS);
 float angles[3]; // yaw pitch roll
 // Set the FreeSixIMU object
-FreeSixIMU sixDOF = FreeSixIMU();
+// FreeSixIMU sixDOF = FreeSixIMU();
 
 // 定义引脚和PWM参数
-#define ESC_PIN_1 11
-#define ESC_PIN_2 12
-#define ESC_PIN_3 13
-#define ESC_PIN_4 14
-#define PWM_FREQ 50
-#define PWM_RESOLUTION 16
+// #define ESC_PIN_1 11
+// #define ESC_PIN_2 12
+// #define ESC_PIN_3 13
+// #define ESC_PIN_4 14
+// #define PWM_FREQ 50
+// #define PWM_RESOLUTION 16
 
 // PWM脉宽范围（单位：微秒）
-#define MIN_PULSE_WIDTH 1000
-#define MAX_PULSE_WIDTH 2000
+// #define MIN_PULSE_WIDTH 1000
+// #define MAX_PULSE_WIDTH 2000
 
 // PWM通道
-#define PWM_CHANNEL_1 0
-#define PWM_CHANNEL_2 1
-#define PWM_CHANNEL_3 2
-#define PWM_CHANNEL_4 3
+// #define PWM_CHANNEL_1 0
+// #define PWM_CHANNEL_2 1
+// #define PWM_CHANNEL_3 2
+// #define PWM_CHANNEL_4 3
 
 // 上一次的角度值和时间戳
 float last_angles[3] = {0, 0, 0};  // 存储上一次的roll, pitch, yaw角度值
@@ -765,9 +765,9 @@ void initSensors() {
 
     Wire.begin();
   
-    delay(5);
-    sixDOF.init(); //begin the IMU
-    delay(5);
+    // delay(5);
+    // sixDOF.init(); //begin the IMU
+    // delay(5);
 }
 
 bool readSensors(sensor_data_t *data) {
@@ -792,61 +792,61 @@ bool readSensors(sensor_data_t *data) {
     mag_angles[1] = mag.YAxis;
     mag_angles[2] = mag.ZAxis;
 
-    // calculateAngularVelocity(data, mag_angles, current_time);
+    calculateAngularVelocity(data, mag_angles, current_time);
 
-    data->degrees[0] = mag_angles[0];
-    data->degrees[1] = mag_angles[1];
-    data->degrees[2] = mag_angles[2];
-    
-    sixDOF.getEuler(angles);
-
-    data->gyro[0] = angles[0];
-    data->gyro[1] = angles[1];
-    data->gyro[2] = angles[2];
+    // data->degrees[0] = mag_angles[0];
+    // data->degrees[1] = mag_angles[1];
+    // data->degrees[2] = mag_angles[2];
+    // 
+    // sixDOF.getEuler(angles);
+// 
+    // data->gyro[0] = angles[0];
+    // data->gyro[1] = angles[1];
+    // data->gyro[2] = angles[2];
 
     data->valid = true;
     return true;
 }
 
 // 初始化电调PWM设置
-void setupESC() {
-  ledcSetup(PWM_CHANNEL_1, PWM_FREQ, PWM_RESOLUTION);
-  ledcSetup(PWM_CHANNEL_2, PWM_FREQ, PWM_RESOLUTION);
-  ledcSetup(PWM_CHANNEL_3, PWM_FREQ, PWM_RESOLUTION);
-  ledcSetup(PWM_CHANNEL_4, PWM_FREQ, PWM_RESOLUTION);
-  ledcAttachPin(ESC_PIN_1, PWM_CHANNEL_1);
-  ledcAttachPin(ESC_PIN_2, PWM_CHANNEL_2);
-  ledcAttachPin(ESC_PIN_3, PWM_CHANNEL_3);
-  ledcAttachPin(ESC_PIN_4, PWM_CHANNEL_4);
-}
+// void setupESC() {
+//   ledcSetup(PWM_CHANNEL_1, PWM_FREQ, PWM_RESOLUTION);
+//   ledcSetup(PWM_CHANNEL_2, PWM_FREQ, PWM_RESOLUTION);
+//   ledcSetup(PWM_CHANNEL_3, PWM_FREQ, PWM_RESOLUTION);
+//   ledcSetup(PWM_CHANNEL_4, PWM_FREQ, PWM_RESOLUTION);
+//   ledcAttachPin(ESC_PIN_1, PWM_CHANNEL_1);
+//   ledcAttachPin(ESC_PIN_2, PWM_CHANNEL_2);
+//   ledcAttachPin(ESC_PIN_3, PWM_CHANNEL_3);
+//   ledcAttachPin(ESC_PIN_4, PWM_CHANNEL_4);
+// }
 
-void outputPWM(int value, const control_output_t *output) {
-  // 限制输入范围
-  float value_1 = constrain(output->motor1, 0, 100);
-  float value_2 = constrain(output->motor2, 0, 100);
-  float value_3 = constrain(output->motor3, 0, 100);
-  float value_4 = constrain(output->motor4, 0, 100);
-  
-  // 将0-100转换为脉宽微秒数
-  int pulseWidth_1 = map(value_1, 0, 100, MIN_PULSE_WIDTH, MAX_PULSE_WIDTH);
-  int pulseWidth_2 = map(value_2, 0, 100, MIN_PULSE_WIDTH, MAX_PULSE_WIDTH);
-  int pulseWidth_3 = map(value_3, 0, 100, MIN_PULSE_WIDTH, MAX_PULSE_WIDTH);
-  int pulseWidth_4 = map(value_4, 0, 100, MIN_PULSE_WIDTH, MAX_PULSE_WIDTH);
-  
-  // 将脉宽转换为占空比
-  // 占空比 = (脉冲宽度 / 周期) * 最大计数值
-  // 周期 = 1 / 频率 = 1 / 50Hz = 20ms = 20000μs
-  uint32_t duty_1 = (pulseWidth_1 * (1 << PWM_RESOLUTION)) / 20000;
-  uint32_t duty_2 = (pulseWidth_2 * (1 << PWM_RESOLUTION)) / 20000;
-  uint32_t duty_3 = (pulseWidth_3 * (1 << PWM_RESOLUTION)) / 20000;
-  uint32_t duty_4 = (pulseWidth_4 * (1 << PWM_RESOLUTION)) / 20000;
-  
-  // 设置PWM
-  ledcWrite(PWM_CHANNEL_1, duty_1);
-  ledcWrite(PWM_CHANNEL_2, duty_2);
-  ledcWrite(PWM_CHANNEL_3, duty_3);
-  ledcWrite(PWM_CHANNEL_4, duty_4);
-}
+// void outputPWM(int value, const control_output_t *output) {
+//   // 限制输入范围
+//   float value_1 = constrain(output->motor1, 0, 100);
+//   float value_2 = constrain(output->motor2, 0, 100);
+//   float value_3 = constrain(output->motor3, 0, 100);
+//   float value_4 = constrain(output->motor4, 0, 100);
+//   
+//   // 将0-100转换为脉宽微秒数
+//   int pulseWidth_1 = map(value_1, 0, 100, MIN_PULSE_WIDTH, MAX_PULSE_WIDTH);
+//   int pulseWidth_2 = map(value_2, 0, 100, MIN_PULSE_WIDTH, MAX_PULSE_WIDTH);
+//   int pulseWidth_3 = map(value_3, 0, 100, MIN_PULSE_WIDTH, MAX_PULSE_WIDTH);
+//   int pulseWidth_4 = map(value_4, 0, 100, MIN_PULSE_WIDTH, MAX_PULSE_WIDTH);
+//   
+//   // 将脉宽转换为占空比
+//   // 占空比 = (脉冲宽度 / 周期) * 最大计数值
+//   // 周期 = 1 / 频率 = 1 / 50Hz = 20ms = 20000μs
+//   uint32_t duty_1 = (pulseWidth_1 * (1 << PWM_RESOLUTION)) / 20000;
+//   uint32_t duty_2 = (pulseWidth_2 * (1 << PWM_RESOLUTION)) / 20000;
+//   uint32_t duty_3 = (pulseWidth_3 * (1 << PWM_RESOLUTION)) / 20000;
+//   uint32_t duty_4 = (pulseWidth_4 * (1 << PWM_RESOLUTION)) / 20000;
+//   
+//   // 设置PWM
+//   ledcWrite(PWM_CHANNEL_1, duty_1);
+//   ledcWrite(PWM_CHANNEL_2, duty_2);
+//   ledcWrite(PWM_CHANNEL_3, duty_3);
+//   ledcWrite(PWM_CHANNEL_4, duty_4);
+// }
 
 // 打印无人机状态和电机的pwm值
 void printStateAndPwmData(drone_state_t *state, control_output_t *output, sensor_data_t *data) {
