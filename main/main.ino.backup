@@ -17,7 +17,7 @@ BMP   bmp(&Wire, BMP::eSdoHigh);
 DFRobot_QMC5883 compass(&Wire, /*I2C addr*/VCM5883L_ADDRESS);
 float angles[3]; // yaw pitch roll
 // Set the FreeSixIMU object
-FreeSixIMU sixDOF = FreeSixIMU();
+// FreeSixIMU sixDOF = FreeSixIMU();
 
 // 定义引脚和PWM参数
 // #define ESC_PIN_1 11
@@ -67,25 +67,6 @@ typedef struct {
     float deadband;     // 死区
 } pid_controller_t;
 
-// 定义增强PID控制器结构（带前馈和抗饱和）
-typedef struct {
-    float kp;           // 比例系数
-    float ki;           // 积分系数
-    float kd;           // 微分系数
-    float kff;          // 前馈系数
-    float integral;     // 积分项
-    float prev_error;   // 上一次误差
-    float prev_measurement; // 上一次测量值
-    float prev_derivative;  // 上一次微分值
-    float output;       // 输出值
-    float output_limit; // 输出限制
-    float integral_limit; // 积分项限制
-    float deadband;     // 死区
-    float derivative_cutoff_freq; // 微分截止频率 (Hz)
-    float derivative_lpf_alpha;   // 微分低通滤波系数
-    bool use_error_derivative;    // 使用误差微分(true)还是测量值微分(false)
-} enhanced_pid_controller_t;
-
 // 定义四元数结构
 typedef struct {
     float w, x, y, z;
@@ -125,15 +106,6 @@ typedef struct {
     float hover_throttle;   // 悬停油门值 (%)
     euler_angles_t max_angle; // 最大允许角度 (rad)
     float max_altitude;     // 最大允许高度 (m)
-    
-    // 增强安全参数
-    float max_angular_velocity[3];  // 最大角速度 [roll, pitch, yaw] (rad/s)
-    float max_linear_velocity[3];   // 最大线速度 [x, y, z] (m/s)
-    float max_acceleration[3];      // 最大加速度 [x, y, z] (m/s²)
-    float min_battery_voltage;      // 最小电池电压 (V)
-    float max_motor_temp;           // 最大电机温度 (°C)
-    uint32_t max_flight_time;       // 最大飞行时间 (ms)
-    float emergency_landing_speed;  // 紧急降落速度 (m/s)
 } drone_config_t;
 
 // 定义UDP数据包结构
@@ -162,42 +134,6 @@ pid_controller_t yaw_pid = {2.0, 0.5, 0.1, 0, 0, 0, 0, 45.0, 25.0, 0.1};
 pid_controller_t alt_pid = {1.5, 0.4, 0.5, 0, 0, 0, 0, 100.0, 50.0, 0.2};
 pid_controller_t vel_z_pid = {1.2, 0.3, 0.2, 0, 0, 0, 0, 50.0, 25.0, 0.1};
 
-// 增强PID控制器实例（带前馈和低通滤波）
-enhanced_pid_controller_t enhanced_roll_pid = {
-    3.0, 0.8, 0.2, 0.1,  // kp, ki, kd, kff
-    0, 0, 0, 0, 0,        // integral, prev_error, prev_measurement, prev_derivative, output
-    45.0, 25.0, 0.05,     // output_limit, integral_limit, deadband
-    30.0, 0.0, true       // derivative_cutoff_freq, derivative_lpf_alpha, use_error_derivative
-};
-
-enhanced_pid_controller_t enhanced_pitch_pid = {
-    3.0, 0.8, 0.2, 0.1,
-    0, 0, 0, 0, 0,
-    45.0, 25.0, 0.05,
-    30.0, 0.0, true
-};
-
-enhanced_pid_controller_t enhanced_yaw_pid = {
-    2.0, 0.5, 0.1, 0.05,
-    0, 0, 0, 0, 0,
-    45.0, 25.0, 0.1,
-    20.0, 0.0, true
-};
-
-enhanced_pid_controller_t enhanced_alt_pid = {
-    1.5, 0.4, 0.5, 0.2,
-    0, 0, 0, 0, 0,
-    100.0, 50.0, 0.2,
-    10.0, 0.0, true
-};
-
-enhanced_pid_controller_t enhanced_vel_z_pid = {
-    1.2, 0.3, 0.2, 0.1,
-    0, 0, 0, 0, 0,
-    50.0, 25.0, 0.1,
-    5.0, 0.0, true
-};
-
 // 目标状态
 euler_angles_t target_attitude = {0, 0, 0};
 float target_altitude = 5.0;        // 目标高度5米
@@ -215,38 +151,6 @@ typedef struct {
 // 高度估计卡尔曼滤波器
 kalman_filter_t alt_kalman = {0, 1, 0.01, 0.1, 0};
 kalman_filter_t vel_z_kalman = {0, 1, 0.01, 0.2, 0};
-
-// 扩展卡尔曼滤波器结构（用于高度和速度估计）
-typedef struct {
-    float x[2];     // 状态向量 [高度, 垂直速度]
-    float P[2][2];  // 误差协方差矩阵
-    float Q[2][2];  // 过程噪声协方差矩阵
-    float R;        // 测量噪声协方差
-    float dt;       // 时间步长
-} ekf_filter_t;
-
-// 扩展卡尔曼滤波器实例
-ekf_filter_t altitude_ekf = {
-    .x = {0, 0},  // 初始高度和速度
-    .P = {{1, 0}, {0, 1}},  // 初始协方差
-    .Q = {{0.01, 0}, {0, 0.01}},  // 过程噪声
-    .R = 0.1,  // 测量噪声
-    .dt = 0.01
-};
-
-// Mahony滤波器参数
-typedef struct {
-    float twoKp;          // 2 * proportional gain (Kp)
-    float twoKi;          // 2 * integral gain (Ki)
-    float integralFBx;    // 积分反馈 x
-    float integralFBy;    // 积分反馈 y
-    float integralFBz;    // 积分反馈 z
-    float sampleFreq;     // 采样频率 (Hz)
-    uint32_t lastUpdate;  // 上一次更新时间
-} mahony_filter_t;
-
-// Mahony滤波器实例
-mahony_filter_t mahony_filter = {2.0f * 0.5f, 2.0f * 0.1f, 0, 0, 0, 100.0f, 0};
 
 // UDP通信相关变量
 WiFiUDP udp;
@@ -268,19 +172,14 @@ void outputPWM(const control_output_t *output);
 void updateAttitude(const sensor_data_t *data, drone_state_t *state, float dt);
 void updateAltitude(const sensor_data_t *data, drone_state_t *state, float dt);
 float pidUpdate(pid_controller_t *pid, float setpoint, float measurement, float dt);
-float enhancedPidUpdate(enhanced_pid_controller_t *pid, float setpoint, float measurement, float setpoint_rate, float dt);
 void quaternionToEuler(const quaternion_t *q, euler_angles_t *euler);
 void quaternionMultiply(const quaternion_t *q1, const quaternion_t *q2, quaternion_t *result);
 void quaternionNormalize(quaternion_t *q);
-void mahonyAHRSUpdate(float gx, float gy, float gz, float ax, float ay, float az, float mx, float my, float mz, float dt);
-void mahonyUpdateAttitude(const sensor_data_t *data, drone_state_t *state, float dt);
 void controlMixer(const euler_angles_t *attitude_error, float alt_error, float vel_z_error, control_output_t *output);
 float applyDeadband(float value, float deadband);
 float constrainFloat(float value, float min, float max);
 void kalmanPredict(kalman_filter_t *kf, float dt);
 void kalmanUpdate(kalman_filter_t *kf, float measurement);
-void ekfAltitudePredict(ekf_filter_t *ekf, float acceleration, float dt);
-void ekfAltitudeUpdate(ekf_filter_t *ekf, float altitude_measurement);
 bool checkSafety(const sensor_data_t *data, const drone_state_t *state, const control_output_t *output);
 bool initWiFi();
 bool sendUDPData(const udp_data_packet_t *packet);
@@ -325,24 +224,6 @@ void setup() {
     drone_config.max_angle.pitch = 0.5; // 约28.6度
     drone_config.max_angle.yaw = 1.0;   // 约57.3度
     drone_config.max_altitude = 50.0;   // 50米最大高度
-    
-    // 初始化增强安全参数
-    drone_config.max_angular_velocity[0] = 3.0;  // 最大滚转角速度 (rad/s)
-    drone_config.max_angular_velocity[1] = 3.0;  // 最大俯仰角速度 (rad/s)
-    drone_config.max_angular_velocity[2] = 2.0;  // 最大偏航角速度 (rad/s)
-    
-    drone_config.max_linear_velocity[0] = 5.0;   // 最大X方向速度 (m/s)
-    drone_config.max_linear_velocity[1] = 5.0;   // 最大Y方向速度 (m/s)
-    drone_config.max_linear_velocity[2] = 2.0;   // 最大Z方向速度 (m/s)
-    
-    drone_config.max_acceleration[0] = 10.0;     // 最大X方向加速度 (m/s²)
-    drone_config.max_acceleration[1] = 10.0;     // 最大Y方向加速度 (m/s²)
-    drone_config.max_acceleration[2] = 5.0;      // 最大Z方向加速度 (m/s²)
-    
-    drone_config.min_battery_voltage = 10.0;     // 最小电池电压 (V)
-    drone_config.max_motor_temp = 80.0;          // 最大电机温度 (°C)
-    drone_config.max_flight_time = 10 * 60 * 1000; // 最大飞行时间10分钟 (ms)
-    drone_config.emergency_landing_speed = 0.5;  // 紧急降落速度 (m/s)
     
     // 初始化控制输出
     control_output.motor1 = 0;
@@ -510,11 +391,6 @@ bool initWiFi() {
     }
 }
 
-// 检查通信链路状态
-bool checkCommunicationLink() {
-    return WiFi.status() == WL_CONNECTED;
-}
-
 // 发送UDP数据
 bool sendUDPData(const udp_data_packet_t *packet) {
     // 开始UDP数据包
@@ -658,10 +534,7 @@ float pidUpdate(pid_controller_t *pid, float setpoint, float measurement, float 
     float integral = pid->ki * pid->integral;
     
     // 微分项（使用测量值微分而不是误差微分）
-    float derivative = 0.0f;
-    if (dt > 0.001f) {  // 避免除零和极小时间步长
-        derivative = -pid->kd * (measurement - pid->prev_measurement) / dt;
-    }
+    float derivative = -pid->kd * (measurement - pid->prev_measurement) / dt;
     
     // 更新上一次测量值
     pid->prev_measurement = measurement;
@@ -779,19 +652,16 @@ bool checkSafety(const sensor_data_t *data, const drone_state_t *state, const co
     // 检查姿态是否超过安全限制
     if (fabsf(state->euler.roll) > drone_config.max_angle.roll ||
         fabsf(state->euler.pitch) > drone_config.max_angle.pitch) {
-        Serial.println("Safety: Attitude angle exceeded!");
         return false;
     }
     
     // 检查高度是否超过安全限制
     if (state->altitude > drone_config.max_altitude) {
-        Serial.println("Safety: Altitude exceeded!");
         return false;
     }
     
     // 检查传感器数据是否有效
     if (!data->valid) {
-        Serial.println("Safety: Invalid sensor data!");
         return false;
     }
     
@@ -800,47 +670,6 @@ bool checkSafety(const sensor_data_t *data, const drone_state_t *state, const co
         output->motor2 < drone_config.motor_min_pwm || output->motor2 > drone_config.motor_max_pwm ||
         output->motor3 < drone_config.motor_min_pwm || output->motor3 > drone_config.motor_max_pwm ||
         output->motor4 < drone_config.motor_min_pwm || output->motor4 > drone_config.motor_max_pwm) {
-        Serial.println("Safety: Motor output out of range!");
-        return false;
-    }
-    
-    // 检查角速度是否超过安全限制
-    if (fabsf(data->gyro[0]) > drone_config.max_angular_velocity[0] ||
-        fabsf(data->gyro[1]) > drone_config.max_angular_velocity[1] ||
-        fabsf(data->gyro[2]) > drone_config.max_angular_velocity[2]) {
-        Serial.println("Safety: Angular velocity exceeded!");
-        return false;
-    }
-    
-    // 检查线速度是否超过安全限制
-    if (fabsf(state->velocity[0]) > drone_config.max_linear_velocity[0] ||
-        fabsf(state->velocity[1]) > drone_config.max_linear_velocity[1] ||
-        fabsf(state->velocity[2]) > drone_config.max_linear_velocity[2]) {
-        Serial.println("Safety: Linear velocity exceeded!");
-        return false;
-    }
-    
-    // 检查加速度是否超过安全限制
-    if (fabsf(data->accel[0]) > drone_config.max_acceleration[0] ||
-        fabsf(data->accel[1]) > drone_config.max_acceleration[1] ||
-        fabsf(data->accel[2]) > drone_config.max_acceleration[2]) {
-        Serial.println("Safety: Acceleration exceeded!");
-        return false;
-    }
-    
-    // 检查飞行时间是否超过限制
-    static uint32_t flight_start_time = 0;
-    if (flight_start_time == 0 && state->armed) {
-        flight_start_time = millis();
-    }
-    if (flight_start_time > 0 && (millis() - flight_start_time) > drone_config.max_flight_time) {
-        Serial.println("Safety: Maximum flight time exceeded!");
-        return false;
-    }
-    
-    // 检查通信链路状态
-    if (!checkCommunicationLink()) {
-        Serial.println("Safety: Communication link lost!");
         return false;
     }
     
@@ -884,10 +713,7 @@ void calculateAngularVelocity(sensor_data_t *data, float current_angles[3], uint
         }
         
         // 计算角速度（度/秒）
-        float angular_velocity_deg = 0.0f;
-        if (dt > 0.001f) {  // 避免除零和极小时间步长
-            angular_velocity_deg = angle_diff / dt;
-        }
+        float angular_velocity_deg = angle_diff / dt;
         
         // 转换为弧度/秒（飞控算法通常使用弧度）
         data->gyro[i] = angular_velocity_deg * (M_PI / 180.0f);
@@ -939,9 +765,9 @@ void initSensors() {
 
     Wire.begin();
   
-    delay(5);
-    sixDOF.init(); //begin the IMU
-    delay(5);
+    // delay(5);
+    // sixDOF.init(); //begin the IMU
+    // delay(5);
 }
 
 bool readSensors(sensor_data_t *data) {
@@ -968,38 +794,15 @@ bool readSensors(sensor_data_t *data) {
 
     calculateAngularVelocity(data, mag_angles, current_time);
 
-    // 存储磁力计数据
-    data->degrees[0] = mag_angles[0];
-    data->degrees[1] = mag_angles[1];
-    data->degrees[2] = mag_angles[2];
-    
-    // 从FreeSixIMU获取加速度计和陀螺仪数据
-    float accel[3], gyro[3];
-    
-    // 获取原始传感器值
-    sixDOF.getValues(accel);  // 获取加速度计数据 (m/s^2)
-    
-    // 获取陀螺仪数据 (rad/s)
-    // 注意：FreeSixIMU的getValues返回的是处理后的值，我们需要原始陀螺仪数据
-    // 这里简化处理，实际应该从sixDOF.gyro对象直接读取
-    float raw_values[6];
-    sixDOF.getRawValues(raw_values);
-    
-    // raw_values[0-2]是加速度计原始值，[3-5]是陀螺仪原始值
-    // 需要转换为实际单位
-    // ADXL345灵敏度: 256 LSB/g, ITG3200灵敏度: 14.375 LSB/(°/s)
-    
-    // 简化处理：使用getEuler获取角度，然后计算角速度
-    sixDOF.getEuler(angles);
-    
-    // 存储加速度计数据
-    data->accel[0] = accel[0];
-    data->accel[1] = accel[1];
-    data->accel[2] = accel[2];
-    
-    // 注意：这里的数据需要根据实际传感器校准
-    // 暂时使用从角度计算的角速度（已在calculateAngularVelocity中计算）
-    // data->gyro[0-2] 已经在calculateAngularVelocity中设置
+    // data->degrees[0] = mag_angles[0];
+    // data->degrees[1] = mag_angles[1];
+    // data->degrees[2] = mag_angles[2];
+    // 
+    // sixDOF.getEuler(angles);
+// 
+    // data->gyro[0] = angles[0];
+    // data->gyro[1] = angles[1];
+    // data->gyro[2] = angles[2];
 
     data->valid = true;
     return true;
@@ -1106,378 +909,3 @@ void printLastOperateStatus(BMP::eStatus_t eStatus) {
   default: Serial.println("unknow status"); break;
   }
 }
-
-// ============================================================================
-// Mahony滤波器实现
-// ============================================================================
-
-// Mahony AHRS更新算法
-void mahonyAHRSUpdate(float gx, float gy, float gz, float ax, float ay, float az, float mx, float my, float mz, float dt) {
-    float q0 = drone_state.attitude.w, q1 = drone_state.attitude.x, q2 = drone_state.attitude.y, q3 = drone_state.attitude.z;
-    
-    float norm;
-    float hx, hy, hz, bx, bz;
-    float vx, vy, vz, wx, wy, wz;
-    float ex, ey, ez;
-    
-    // 计算加速度计测量值的范数
-    norm = sqrtf(ax * ax + ay * ay + az * az);
-    if (norm == 0.0f) return; // 处理除以零
-    ax /= norm;
-    ay /= norm;
-    az /= norm;
-    
-    // 计算磁力计测量值的范数
-    norm = sqrtf(mx * mx + my * my + mz * mz);
-    if (norm == 0.0f) return; // 处理除以零
-    mx /= norm;
-    my /= norm;
-    mz /= norm;
-    
-    // 将磁力计向量从机体坐标系转换到地球坐标系
-    hx = 2.0f * mx * (0.5f - q2 * q2 - q3 * q3) + 2.0f * my * (q1 * q2 - q0 * q3) + 2.0f * mz * (q1 * q3 + q0 * q2);
-    hy = 2.0f * mx * (q1 * q2 + q0 * q3) + 2.0f * my * (0.5f - q1 * q1 - q3 * q3) + 2.0f * mz * (q2 * q3 - q0 * q1);
-    hz = 2.0f * mx * (q1 * q3 - q0 * q2) + 2.0f * my * (q2 * q3 + q0 * q1) + 2.0f * mz * (0.5f - q1 * q1 - q2 * q2);
-    
-    // 归一化磁力计向量
-    bx = sqrtf(hx * hx + hy * hy);
-    bz = hz;
-    
-    // 计算参考方向向量
-    vx = 2.0f * (q1 * q3 - q0 * q2);
-    vy = 2.0f * (q0 * q1 + q2 * q3);
-    vz = q0 * q0 - q1 * q1 - q2 * q2 + q3 * q3;
-    
-    wx = 2.0f * bx * (0.5f - q2 * q2 - q3 * q3) + 2.0f * bz * (q1 * q3 - q0 * q2);
-    wy = 2.0f * bx * (q1 * q2 - q0 * q3) + 2.0f * bz * (q0 * q1 + q2 * q3);
-    wz = 2.0f * bx * (q0 * q2 + q1 * q3) + 2.0f * bz * (0.5f - q1 * q1 - q2 * q2);
-    
-    // 计算误差
-    ex = (ay * vz - az * vy) + (my * wz - mz * wy);
-    ey = (az * vx - ax * vz) + (mz * wx - mx * wz);
-    ez = (ax * vy - ay * vx) + (mx * wy - my * wx);
-    
-    // 积分误差
-    if (mahony_filter.twoKi > 0.0f) {
-        mahony_filter.integralFBx += mahony_filter.twoKi * ex * dt;
-        mahony_filter.integralFBy += mahony_filter.twoKi * ey * dt;
-        mahony_filter.integralFBz += mahony_filter.twoKi * ez * dt;
-        
-        // 应用积分反馈
-        gx += mahony_filter.integralFBx;
-        gy += mahony_filter.integralFBy;
-        gz += mahony_filter.integralFBz;
-    } else {
-        mahony_filter.integralFBx = 0.0f;
-        mahony_filter.integralFBy = 0.0f;
-        mahony_filter.integralFBz = 0.0f;
-    }
-    
-    // 应用比例反馈
-    gx += mahony_filter.twoKp * ex;
-    gy += mahony_filter.twoKp * ey;
-    gz += mahony_filter.twoKp * ez;
-    
-    // 四元数导数
-    float qDot1 = 0.5f * (-q1 * gx - q2 * gy - q3 * gz);
-    float qDot2 = 0.5f * (q0 * gx + q2 * gz - q3 * gy);
-    float qDot3 = 0.5f * (q0 * gy - q1 * gz + q3 * gx);
-    float qDot4 = 0.5f * (q0 * gz + q1 * gy - q2 * gx);
-    
-    // 积分四元数
-    q0 += qDot1 * dt;
-    q1 += qDot2 * dt;
-    q2 += qDot3 * dt;
-    q3 += qDot4 * dt;
-    
-    // 归一化四元数
-    norm = sqrtf(q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3);
-    if (norm == 0.0f) return;
-    q0 /= norm;
-    q1 /= norm;
-    q2 /= norm;
-    q3 /= norm;
-    
-    // 更新无人机状态
-    drone_state.attitude.w = q0;
-    drone_state.attitude.x = q1;
-    drone_state.attitude.y = q2;
-    drone_state.attitude.z = q3;
-}
-
-// 使用Mahony滤波器更新姿态
-void mahonyUpdateAttitude(const sensor_data_t *data, drone_state_t *state, float dt) {
-    // 获取传感器数据
-    float gx = data->gyro[0];
-    float gy = data->gyro[1];
-    float gz = data->gyro[2];
-    
-    float ax = data->accel[0];
-    float ay = data->accel[1];
-    float az = data->accel[2];
-    
-    float mx = data->degrees[0];
-    float my = data->degrees[1];
-    float mz = data->degrees[2];
-    
-    // 调用Mahony AHRS更新
-    mahonyAHRSUpdate(gx, gy, gz, ax, ay, az, mx, my, mz, dt);
-    
-    // 更新欧拉角
-    quaternionToEuler(&state->attitude, &state->euler);
-    
-    // 更新时间戳
-    state->timestamp = data->timestamp;
-}
-
-// 修改updateAttitude函数以使用Mahony滤波器
-void updateAttitude(const sensor_data_t *data, drone_state_t *state, float dt) {
-    // 使用Mahony滤波器更新姿态
-    mahonyUpdateAttitude(data, state, dt);
-    
-    // 调试输出：比较两种算法的结果
-    static int debug_counter = 0;
-    if (debug_counter++ % 100 == 0) {
-        Serial.print("Mahony滤波器 - 姿态: ");
-        Serial.print(state->euler.roll * 180.0f / M_PI); Serial.print("°, ");
-        Serial.print(state->euler.pitch * 180.0f / M_PI); Serial.print("°, ");
-        Serial.print(state->euler.yaw * 180.0f / M_PI); Serial.println("°");
-    }
-}
-
-// ============================================================================
-// 扩展卡尔曼滤波器实现（用于高度和速度估计）
-// ============================================================================
-
-// EKF预测步骤
-void ekfAltitudePredict(ekf_filter_t *ekf, float acceleration, float dt) {
-    // 状态转移矩阵 F
-    float F[2][2] = {
-        {1, dt},
-        {0, 1}
-    };
-    
-    // 控制输入矩阵 B
-    float B[2] = {0.5f * dt * dt, dt};
-    
-    // 预测状态: x = F * x + B * u
-    float x_pred[2] = {0, 0};
-    x_pred[0] = F[0][0] * ekf->x[0] + F[0][1] * ekf->x[1] + B[0] * acceleration;
-    x_pred[1] = F[1][0] * ekf->x[0] + F[1][1] * ekf->x[1] + B[1] * acceleration;
-    
-    ekf->x[0] = x_pred[0];
-    ekf->x[1] = x_pred[1];
-    
-    // 预测协方差: P = F * P * F^T + Q
-    float P_pred[2][2] = {{0, 0}, {0, 0}};
-    
-    // 计算 F * P
-    float FP[2][2] = {{0, 0}, {0, 0}};
-    for (int i = 0; i < 2; i++) {
-        for (int j = 0; j < 2; j++) {
-            for (int k = 0; k < 2; k++) {
-                FP[i][j] += F[i][k] * ekf->P[k][j];
-            }
-        }
-    }
-    
-    // 计算 F * P * F^T
-    for (int i = 0; i < 2; i++) {
-        for (int j = 0; j < 2; j++) {
-            for (int k = 0; k < 2; k++) {
-                P_pred[i][j] += FP[i][k] * F[j][k];  // F^T[j][k] = F[k][j]
-            }
-            P_pred[i][j] += ekf->Q[i][j];  // 加上过程噪声
-        }
-    }
-    
-    // 更新协方差矩阵
-    ekf->P[0][0] = P_pred[0][0];
-    ekf->P[0][1] = P_pred[0][1];
-    ekf->P[1][0] = P_pred[1][0];
-    ekf->P[1][1] = P_pred[1][1];
-}
-
-// EKF更新步骤
-void ekfAltitudeUpdate(ekf_filter_t *ekf, float altitude_measurement) {
-    // 测量矩阵 H = [1, 0]（只测量高度）
-    float H[2] = {1, 0};
-    
-    // 计算测量残差: y = z - H * x
-    float y = altitude_measurement - (H[0] * ekf->x[0] + H[1] * ekf->x[1]);
-    
-    // 计算残差协方差: S = H * P * H^T + R
-    float S = 0;
-    for (int i = 0; i < 2; i++) {
-        for (int j = 0; j < 2; j++) {
-            S += H[i] * ekf->P[i][j] * H[j];
-        }
-    }
-    S += ekf->R;
-    
-    // 计算卡尔曼增益: K = P * H^T * S^-1
-    float K[2] = {0, 0};
-    for (int i = 0; i < 2; i++) {
-        for (int j = 0; j < 2; j++) {
-            K[i] += ekf->P[i][j] * H[j];
-        }
-        K[i] /= S;
-    }
-    
-    // 更新状态估计: x = x + K * y
-    ekf->x[0] += K[0] * y;
-    ekf->x[1] += K[1] * y;
-    
-    // 更新协方差: P = (I - K * H) * P
-    float KH[2][2] = {{0, 0}, {0, 0}};
-    for (int i = 0; i < 2; i++) {
-        for (int j = 0; j < 2; j++) {
-            KH[i][j] = K[i] * H[j];
-        }
-    }
-    
-    float I_minus_KH[2][2] = {
-        {1 - KH[0][0], -KH[0][1]},
-        {-KH[1][0], 1 - KH[1][1]}
-    };
-    
-    float P_updated[2][2] = {{0, 0}, {0, 0}};
-    for (int i = 0; i < 2; i++) {
-        for (int j = 0; j < 2; j++) {
-            for (int k = 0; k < 2; k++) {
-                P_updated[i][j] += I_minus_KH[i][k] * ekf->P[k][j];
-            }
-        }
-    }
-    
-    ekf->P[0][0] = P_updated[0][0];
-    ekf->P[0][1] = P_updated[0][1];
-    ekf->P[1][0] = P_updated[1][0];
-    ekf->P[1][1] = P_updated[1][1];
-}
-
-// 改进的高度估计函数（使用扩展卡尔曼滤波器）
-void updateAltitude(const sensor_data_t *data, drone_state_t *state, float dt) {
-    // 更新EKF的时间步长
-    altitude_ekf.dt = dt;
-    
-    // 计算垂直加速度（在机体坐标系中）
-    // 需要将加速度转换到世界坐标系
-    float vertical_acceleration = data->accel[2] - 9.81f; // 减去重力加速度（简化）
-    
-    // EKF预测步骤
-    ekfAltitudePredict(&altitude_ekf, vertical_acceleration, dt);
-    
-    // 从气压计计算高度测量值
-    const float sea_level_pressure = 101325.0f; // 海平面标准大气压
-    float measured_altitude = 44330.0f * (1.0f - powf(data->baro / sea_level_pressure, 0.1903f));
-    
-    // 温度补偿
-    float temperature_compensation = 0.01f * (data->temp - 20.0f); // 假设20°C为参考温度
-    measured_altitude += temperature_compensation;
-    
-    // EKF更新步骤
-    ekfAltitudeUpdate(&altitude_ekf, measured_altitude);
-    
-    // 更新无人机状态
-    state->altitude = altitude_ekf.x[0];
-    state->velocity[2] = altitude_ekf.x[1];
-    
-    // 调试输出
-    static int alt_debug_counter = 0;
-    if (alt_debug_counter++ % 100 == 0) {
-        Serial.print("EKF高度估计 - 高度: ");
-        Serial.print(state->altitude);
-        Serial.print("m, 垂直速度: ");
-        Serial.print(state->velocity[2]);
-        Serial.print("m/s, 测量高度: ");
-        Serial.print(measured_altitude);
-        Serial.println("m");
-    }
-}
-
-// ============================================================================
-// 增强PID控制器实现
-// ============================================================================
-
-// 计算低通滤波系数
-float calculateLPFAlpha(float cutoff_freq, float dt) {
-    if (cutoff_freq <= 0 || dt <= 0) return 0.0f;
-    float rc = 1.0f / (2.0f * M_PI * cutoff_freq);
-    return dt / (rc + dt);
-}
-
-// 增强PID控制器更新
-float enhancedPidUpdate(enhanced_pid_controller_t *pid, float setpoint, float measurement, float setpoint_rate, float dt) {
-    // 计算误差
-    float error = setpoint - measurement;
-    
-    // 应用死区
-    error = applyDeadband(error, pid->deadband);
-    
-    // 比例项
-    float proportional = pid->kp * error;
-    
-    // 积分项（带抗饱和和积分分离）
-    // 积分分离：只有当误差较小时才积分，避免大误差时积分饱和
-    if (fabs(error) < 2.0f * pid->deadband || pid->deadband == 0) {
-        pid->integral += error * dt;
-    }
-    
-    // 抗饱和：限制积分项
-    pid->integral = constrainFloat(pid->integral, -pid->integral_limit, pid->integral_limit);
-    float integral = pid->ki * pid->integral;
-    
-    // 微分项
-    float derivative = 0.0f;
-    if (dt > 0.001f) {  // 避免除零和极小时间步长
-        if (pid->use_error_derivative) {
-            // 使用误差微分
-            derivative = pid->kd * (error - pid->prev_error) / dt;
-        } else {
-            // 使用测量值微分（对噪声更敏感）
-            derivative = -pid->kd * (measurement - pid->prev_measurement) / dt;
-        }
-        
-        // 应用低通滤波到微分项（减少噪声）
-        if (pid->derivative_cutoff_freq > 0) {
-            // 计算低通滤波系数
-            pid->derivative_lpf_alpha = calculateLPFAlpha(pid->derivative_cutoff_freq, dt);
-            // 应用一阶低通滤波
-            pid->prev_derivative = pid->derivative_lpf_alpha * derivative + 
-                                  (1.0f - pid->derivative_lpf_alpha) * pid->prev_derivative;
-            derivative = pid->prev_derivative;
-        }
-    }
-    
-    // 前馈项（使用设定值变化率）
-    float feedforward = pid->kff * setpoint_rate;
-    
-    // 计算总输出
-    pid->output = proportional + integral + derivative + feedforward;
-    
-    // 更新历史值
-    pid->prev_error = error;
-    pid->prev_measurement = measurement;
-    
-    // 限制输出
-    pid->output = constrainFloat(pid->output, -pid->output_limit, pid->output_limit);
-    
-    // 抗饱和：当输出饱和时，停止积分（防止积分饱和）
-    if (fabs(pid->output) >= pid->output_limit) {
-        // 输出饱和，根据误差方向决定是否停止积分
-        if ((error > 0 && pid->output > 0) || (error < 0 && pid->output < 0)) {
-            // 误差和输出同向，停止积分
-            pid->integral -= error * dt; // 撤销本次积分
-        }
-    }
-    
-    return pid->output;
-}
-
-// 修改主循环中的PID调用以使用增强PID控制器
-// 注意：需要在loop()函数中修改PID调用部分
-// 将原来的：
-// float roll_output = pidUpdate(&roll_pid, target_attitude.roll, drone_state.euler.roll, dt);
-// 改为：
-// float roll_output = enhancedPidUpdate(&enhanced_roll_pid, target_attitude.roll, drone_state.euler.roll, 0, dt);
